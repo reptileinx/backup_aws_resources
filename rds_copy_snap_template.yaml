@@ -1,0 +1,155 @@
+AWSTemplateFormatVersion : '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+    This SAM creates the following resources:
+
+      RDS Backup Procedure: Comprised of RDSCopySnapshot Lambda functions and IAM Roles
+      SNS Topic, Subscriptions and Roles required
+      The RDS should subscribe to the SNS Created and send a Backup Event
+
+    Last Modified: 23 August 2017
+    Author: <reptileinx@gmail.com>
+
+Parameters:
+    SnsCopyTopicNameParam:
+        Type: String
+        Default: 'reptileinx_copy_failsafe_snapshot_sns_topic'
+    SnsSaveTopicNameParam:
+        Type: String
+        Default: 'reptileinx_save_failsafe_snapshot_sns_topic'
+    FailsafeAccountIdParam:
+        Type: Number
+        Default: 152437754906
+
+Outputs:
+    RDSCopySnapshotFunction:
+      Description: 'RDSCopySnapshot Lambda Function that copies and shares RDS Snapshots'
+      Value: !GetAtt RDSCopySnapshotFunction.Arn
+    SnsCopyTopicName:
+      Description: 'RDS Copy Topic which triggers the lambda function (due to aws bug 4328501211 - not functional)'
+      Value: !Ref SnsCopyTopicNameParam
+    SnsSaveTopicName:
+      Description: 'RDS Save Topic which triggers the Save lambda function in the failsafe account'
+      Value: !Ref SnsSaveTopicNameParam
+
+Resources:
+    SnsCopyTopicName:
+        Type: 'AWS::SNS::Topic'
+        Properties:
+          TopicName: !Ref SnsCopyTopicNameParam
+
+    SnsSaveTopicName:
+        Type: 'AWS::SNS::Topic'
+        Properties:
+          TopicName: !Ref SnsSaveTopicNameParam
+
+    RDSCopySnapshotIAMRole:
+        Type: 'AWS::IAM::Role'
+        Description: 'Allows Lambda Function to call AWS services on our behalf, including RDS and SNS'
+        Properties:
+            Path: '/'
+            ManagedPolicyArns:
+                - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+                - !Ref RDSCRUDPolicy
+            AssumeRolePolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                -
+                  Sid: 'AllowLambdaServiceToAssumeRole'
+                  Effect: 'Allow'
+                  Action:
+                    - 'sts:AssumeRole'
+                  Principal:
+                    Service:
+                      - 'lambda.amazonaws.com'
+
+    RDSCopySnapshotFunction:
+      Type: 'AWS::Serverless::Function'
+      Properties:
+        Handler: rdscopysnapshots.handler
+        Runtime: python2.7
+        Role: !GetAtt RDSCopySnapshotIAMRole.Arn
+        CodeUri: .
+        Description: >-
+           Copy Automated RDS Snapshot and share it with Failsafe account. Triggered by Schedule
+           The initial intention was to trigger by SNS but there is an AWS bug that needs fixing
+        MemorySize: 128
+        Timeout: 300
+        Events:
+          SnsRdsCopy:
+            Type: SNS
+            Properties:
+              Topic: !Ref SnsCopyTopicName
+          Timer:
+            Type: Schedule
+            Properties:
+              Schedule: cron(0 18 * * ? *)
+        Environment:
+          Variables:
+            FAILSAFE_ACCOUNT_ID: !Ref FailsafeAccountIdParam
+        Tags:
+          Name: failsafe_rds_snapshot_copy
+          BusinessDepartment: reptileinx
+          Environment: sandpit
+          Expiry: 2017-12-31
+
+    SNSTopicPolicy:
+        Type: 'AWS::SNS::TopicPolicy'
+        Properties:
+          Topics:
+            - !Ref SnsSaveTopicName
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'sns:Publish'
+                Resource: !Ref SnsSaveTopicName
+                Principal:
+                  AWS: '*'
+
+    RDSCRUDPolicy:
+      Type: AWS::IAM::ManagedPolicy
+      Properties:
+        ManagedPolicyName: rdscopysnapshots-policy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: 'arn:aws:logs:*:*:*'
+            - Effect: Allow
+              Action:
+                - 'rds:ListTagsForResource'
+                - 'rds:DescribeDBSnapshots'
+                - 'rds:DescribeDBInstances'
+                - 'rds:DeleteDBSnapshot'
+                - 'rds:CopyDBSnapshot'
+                - 'rds:ModifyDBSnapshotAttribute'
+                - 'SNS:Publish'
+                - 'SNS:ListTopics'
+              Resource: '*'
+
+
+    BackupLambdaTopicSubscriptionPolicy:
+      Type: AWS::SNS::TopicPolicy
+      Properties:
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Sid: AllowSaveLambdaToSubscribe
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${FailsafeAccountIdParam}:root' # The key permission is that the account 152437754906,
+                                                     # where the save Lambda function resides, has the ability to
+                                                     # SNS:Subscribe and SNS:Receive from target account topic.
+            Action:
+              - 'SNS:Subscribe'
+              - 'SNS:ListSubscriptionsByTopic'
+              - 'SNS:Receive'
+            Resource: !Ref SnsSaveTopicName
+        Topics:
+        - Ref: SnsSaveTopicName
+      DependsOn: SnsSaveTopicName
