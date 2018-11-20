@@ -105,9 +105,10 @@ Using the Backup source type of RDS causes two events to be sent to the Lambda f
     ```
     NOTE: We pushed the file (rds_backup/rdscopysnapshots.zip) to AWS S3 and we were able to create Lambdas. AWS SAM is elegant since it does this for us automatically.
 
-6. Failsafe Account: Subscribe the “Save Lambda" function to an <SNSSaveTopic> that is cross Account capable
+6. Failsafe Account: Subscribe the “Save Lambda" function to an <SNSSaveTopic> that is cross Account capable <br />
     STEP 1.
-    # Tell the Lambda function in Failsafe account about the SNS topic in Target account. Ran this in the Failsafe Account aws cli context.
+    - Tell the Lambda function in Failsafe account about the SNS topic in Target account. Ran this in the Failsafe Account aws cli context.
+
     ```shell
 
        $ aws sns subscribe \
@@ -365,7 +366,7 @@ The picture bellow shows how then StackSet will be able toi orchestrate to diffe
 ![Sorry … Image has gone shopping](./readme_artefacts/StackSetAssumeRole.png "StackSet Assume Role")
 
 
-## Other 
+## Other
 1. What will happen if the 5 databases save snapshots at exactly the same time? Consider the fact that the Lambda function will die after 5 min.
 2. How can we stop the need for re-running both Stacks in if we recreate the Copy stack?
    If the Copy stack is refreshed, you will need to rerun the Save stack because it will need to subscribe to the Copy stack.
@@ -396,21 +397,21 @@ Testing of the RDS Snapshot Copy/Save Stacks is complex as described above.
             https://github.com/spulec/moto
 
         - Installing and Testing with Moto
-        
+
         ```bash
             pip install pytest
             pip install coverage
-            
+
             # we recommend setting up moto by pulling down the github repository and running the docker install
              docker build -t motoserver .
             # In the moto dir run
         ```
-        
+
         run tests like so
         ```bash
             py.test --cov-report term --cov=rdssavesnapshots test_save_manual_failsafe_snapshot_standalone.py
         ```
-        
+
         #### Additional Access Required to Operate these Stacks
             Contact Cloud Services to modify User Access for Prod Account with the following policies.
             delete policy, detachrolepolicy, update,create,deletestack
