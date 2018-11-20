@@ -5,7 +5,7 @@ import logging
 import os
 import re
 import time
-from datetime import tzinfo, timedelta, datetime
+from datetime import datetime, timedelta, timezone
 
 from boto3 import client
 from botocore.exceptions import ClientError
@@ -25,20 +25,16 @@ SNS_RDS_SAVE_TOPIC = 'reptileinx_save_failsafe_snapshot_sns_topic'
 AWS_DEFAULT_REGION = 'ap-southeast-2'
 FAILSAFE_ACCOUNT_ID = os.environ['FAILSAFE_ACCOUNT_ID']
 MANUAL_SNAPSHOT_EXISTS_MESSAGE = 'Manual snapshot already exists for the automated snapshot {}'
-ZERO = timedelta(0)  # required to handle timezones correctly
 
 
-class UTC(tzinfo):
-    def __init__(self, dt):
-        return 'UTC' if self.tzname else ZERO
-    # def utcoffset(self, dt):
-    #     return ZERO
-    #
-    # def tzname(self, dt):
-    #     return 'UTC'
-    #
-    # def dst(self, dt):
-    #     return ZERO
+def _get_aedt_timezone():
+    """
+    utility method to set UTC timezone to Sydney - location of datacentre
+    :return:
+        AEDT timezone object
+    """
+    UTCPLUSTEN = timedelta(hours=10)
+    return timezone(UTCPLUSTEN, 'AEDT')
 
 
 logger = logging.getLogger()
@@ -208,7 +204,7 @@ def get_snapshot_date(snapshot):
     :param snapshot: snapshot being created
     :return: datetime value of when snapshot was created
     """
-    return datetime.now(UTC()) if snapshot['Status'] != 'available' else snapshot['SnapshotCreateTime']
+    return datetime.now(_get_aedt_timezone()) if snapshot['Status'] != 'available' else snapshot['SnapshotCreateTime']
 
 
 def get_snapshots(rds, instance, snapshot_type):
