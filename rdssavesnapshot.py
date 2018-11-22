@@ -365,7 +365,9 @@ def handler(event, context):
         if record['EventSource'] == 'aws:sns' and record['Sns']['Message']:
             if TESTING_HACK:
                 instance = read_test_notification_payload(record, 'Instance')
-                snapshot_id = read_test_notification_payload(record, 'FailsafeSnapshotID')
+                snapshot_id = read_test_notification_payload(
+                                                        record,
+                                                        'FailsafeSnapshotID')
             else:
                 instance = read_notification_payload(record, 'Instance')
                 snapshot_id = read_notification_payload(record,
