@@ -56,50 +56,54 @@ This opportunity arose from the realisation that waiting for any RDS event to co
 3. Requested a functionality that will allow immediate sharing of the RDS Automated Backups with accounts of choice
 4. Give more Cross Account definitions to the current RDS APIs
 
+---
 ## Summary of Current Solution
 
-Backing Up the COM RDS Snapshot from public cloud Prod to FailSafe Prod Account.
-In order to perform cross account Amazon SNS deliveries to Lambda, we have authorized Lambda function to be invoked from Amazon SNS in Prod Account.
-In turn, Amazon SNS needs to allow the Lambda account to subscribe to the Amazon SNS topic.
+Backing up the RDS Snapshot from AWS production account to FailSafe production Account.
+In order to perform cross account actions Amazon SNS deliveries to Lambda, we have authorised the Lambda function to be invoked from Amazon SNS in the AWS production  Account. In turn, Amazon SNS needs to allow the Lambda account to subscribe to the Amazon SNS topic.
 
 #### Current Implementation in Prose
+> **Target Account** - means execute the AWS CLI commands in the context of the target account <br />
+> **Failsafe Account** - means execute the AWS CLI commands in the context of the FailSafe account
 
-1. Target Account: RDS Instance has automated snapshot configured
-2. Target Account: Create an SNS Topic that the RDS will subscribe to e.g. <SNSCopyTopic>.
-    - An event will be fired via SNS to begin the backup process once an auto-backup is complete. "SNSTopicRDSAutoSnap"
-    #### [- Because of the “Event Category Bug” we are using an event trigger at 4AM] - check if this is still true
-3. Target Account: RDS Event Subscription to SNS Topic is created
-4. Target Account: Create an SNS Topic for the “Save Lambda" Functions to Subscribe to - <SNSSaveTopic>
+1. **Target Account:** RDS Instance has automated snapshot configured
+2. **Target Account:** Create an SNS Topic that the RDS will subscribe; `SNSCopyTopic`.
+    - An event will be fired via SNS to begin the backup process once an auto-backup is complete. `SNSTopicRDSAutoSnap`
+    > Because of the “Event Category Bug” we are using an event trigger at 4AM] - check if this is still true #1
 
-Generic steps for 2. 3. 4.
-=> Create an SNS Topic for “Some Lambda" Functions to Subscribe to (SNSSomeTopic)
+3. **Target Account:** RDS Event Subscription to SNS Topic is created
+4. **Target Account:** Create an SNS Topic for the `Save Lambda Function` to Subscribe to - `SNSSaveTopic`
+
+> The step described here will be generic for 2. 3. 4. <br />
 Note:
 Using the Backup source type of RDS causes two events to be sent to the Lambda function. These have to be handled by the Lambda function
     - backup (RDS-EVENT-0001) - An automated backup of the DB instance has started.
     - backup (RDS-EVENT-0002) - An automated backup of the DB instance is complete.
-    ```shell
-        aws sns create-topic \
-            --name <SNSSomeTopic>
-        Response:
-        {
-            "TopicArn": "arn:aws:sns:ap-southeast-2:<some_account_id>:<SNSSomeTopic>"
-        }
-    ```
+
+- Create an SNS Topic for `Some Lambda Function` to Subscribe to `SNSSomeTopic`
+      ```bash
+          aws sns create-topic --name <SNSSomeTopic>
+          Response:
+          {
+              "TopicArn": "arn:aws:sns:ap-southeast-2:<some_account_id>:<SNSSomeTopic>"
+          }
+      ```
 
 
-5. Target Account: Create a Lambda Function <rdscopysnapshots> that will:
+5. **Target Account:** Create a Lambda Function `rdscopysnapshots` that will:
     - copy Automated RDS snapshot to a Manual snapshot
     - share the Manual Snapshot with the Failsafe account
     - trigger an SNS event once copy of RDS automated snapshot is complete.
 
-    Pre-requisite:
-     Create Role and attach policies to execute Lambda as well as work with RDS Snapshot...
+    *Pre-requisite:*<br />
+     - Create Role and attach policies to execute Lambda as well as work with RDS Snapshot...
      See: rdscopysnapshots-role-policy.json - might need to restrict access to a particular RDS instance
      ```shell
         $ aws iam create-role --role-name <rdscopysnapshots> \
             --assume-role-policy-document <file://rdscopysnapshots-role-policy.json>
      ```
 
+     - Command to create Lambda function
      ```shell
      $ aws lambda create-function \
         --function-name <rdscopysnapshots> \
@@ -111,28 +115,28 @@ Using the Backup source type of RDS causes two events to be sent to the Lambda f
         --memory-size 128 \
         --zip-file <rds_backup/rdscopysnapshots.zip>
     ```
-    NOTE: We pushed the file (rds_backup/rdscopysnapshots.zip) to AWS S3 and we were able to create Lambdas. AWS SAM is elegant since it does this for us automatically.
+    > NOTE: We pushed the file (rds_backup/rdscopysnapshots.zip) to AWS S3 and we were able to create Lambdas. AWS SAM is elegant since it does this for us automatically.
 
-6. Failsafe Account: Subscribe the “Save Lambda" function to an <SNSSaveTopic> that is cross Account capable <br />
-    STEP 1.
-    - Tell the Lambda function in Failsafe account about the SNS topic in Target account. Ran this in the Failsafe Account aws cli context.
+6. **Failsafe Account:** Subscribe the `Save Lambda Function` to an `SNSSaveTopic` that is cross Account capable <br />
+    **STEP 1.**
+    - Tell the Lambda function in Failsafe account about the SNS topic in the Target account. Ran this in the Failsafe Account AWS CLI context.
 
-    ```shell
-
+    ```bash
        $ aws sns subscribe \
             --topic-arn arn:aws:sns:ap-southeast-2:<target_account_id>:<SNSSaveTopic> \
             --protocol lambda \
             --notification-endpoint arn:aws:lambda:ap-southeast-2:<failsafe_account_id>:function:<rdssavesnapshots>
 
+        response:
         {
             "SubscriptionArn": "arn:aws:sns:ap-southeast-2:<target_account_id>:<SNSSaveTopic>:fb93-21fc-4577-9ab1-0c4cc5a1"
         }
     ```
 
-    STEP 2.
+    **STEP 2.**
     - Allow the Failsafe account Lambda function to subscribe, list subscriptions by topic and to receive notifications from the Target SNS Topic
 
-    ```shell
+    ```bash
         # run in the aws cli context of the target account
         ➜  $ aws sns add-permission \
             --topic-arn "topic-arn arn:aws:sns:ap-southeast-2:<target_account_id>:<SNSSaveTopic>" \
@@ -159,8 +163,8 @@ Using the Backup source type of RDS causes two events to be sent to the Lambda f
         }
     ```
 
-7. Target Account: Allow the Failsafe account resources to subscribe, list subscriptions by topic and to receive notifications from the <SNSSaveTopic>.
-    ```shell
+7. **Target Account:** Allow the Failsafe account resources to subscribe, list subscriptions by topic and to receive notifications from the `SNSSaveTopic`.
+    ```bash
         # run from the Failsafe account context to create a trust policy on the lambda in the failsafe account
         ➜ aws lambda add-permission \
                 --function-name <rdssavesnapshot> \
@@ -169,29 +173,25 @@ Using the Backup source type of RDS causes two events to be sent to the Lambda f
                 --principal sns.amazonaws.com \
                 --source-arn arn:aws:sns:ap-southeast-2:<target_account_id>:<SNSSaveTopic>
 
-
         The response below confirms that SNS from target account will be able to trigger the lambda function in Failsafe account
 
         {
             "Statement": "{\"Sid\":\"rdssavesnapshot\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"sns.amazonaws.com\"},\"Action\":\"lambda:InvokeFunction\",\"Resource\":\"arn:aws:lambda:ap-southeast-2:<failsafe_account_id>:function:rdssavesnapshot\",\"Condition\":{\"ArnLike\":{\"AWS:SourceArn\":\"arn:aws:sns:ap-southeast-2:target_account_id:SNSSaveTopic\"}}}"
         }
-
-        Note:
-
-        Do not use the --source-account parameter to add a source account to the Lambda policy when adding the policy.
-        Source account is not supported for Amazon SNS event sources and will result in access being denied.
-        This has no security impact as the source account is included in the source ARN.
-
-        To get the above output run
-
-         ➜ $ aws lambda get-policy --function-name <rdssavesnapshot>
     ```
 
-8. Failsafe account: Create a Lambda Function <rdssavesnapshots> that will:
+> NOTE: Do not use the --source-account parameter to add a source account to the Lambda policy when adding the policy. Source account is not supported for Amazon SNS event sources and will result in access being denied. This has no security impact as the source account is included in the source ARN.
+
+To get the above output run
+```
+➜ aws lambda get-policy --function-name <rdssavesnapshot>
+```  
+
+8. **Failsafe account:** Create a Lambda Function `rdssavesnapshots` that will:
     - copy shared manual RDS snapshots to manual snapshots in the Failsafe account
     - Delete previously saved snapshots in the Failsafe account according to the retention period
     - Notify all subscribers that the snapshots have been saved in the Failsafe account
-    ```shell
+    ```bash
        # run in the context of the backup account
         ➜ $ aws sns subscribe \
             --topic-arn arn:aws:sns:ap-southeast-2:<target_account_id>:SNSSaveTopic \
@@ -203,10 +203,11 @@ Using the Backup source type of RDS causes two events to be sent to the Lambda f
         }
 
     ```
-9. Failsafe account: Allow the Lambda function to accept invocations from Target <SNSSaveTopic>
-10. Failsafe account: subscribe the Lambda function to the topic in Target Account.
 
+9. **Failsafe account:** Allow the Lambda function to accept invocations from Target `SNSSaveTopic`
+10. **Failsafe account:** subscribe the Lambda function to the topic in Target Account.
 
+---
 #### Testing the stack created
 Log on to the Target account AWS console and run the test on the Lambda function. The default test payload will work just fine as the Lambda is not using any Event Object.
 
