@@ -19,7 +19,6 @@ It then shares the snapshot with a 'restricted' Failsafe account, sends an
 SNS notification to the subscription Topic.
 """
 
-FAILSAFE_TAG = 'failsafe'
 FAILSAFE_SNAPSHOT_PREFIX = 'failsafe-'
 SNS_RDS_SAVE_TOPIC = 'reptileinx_save_failsafe_snapshot_sns_topic'
 AWS_DEFAULT_REGION = 'ap-southeast-2'
