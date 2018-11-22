@@ -2,17 +2,18 @@
 
 ## Benefits
 
-1. Reduces the identified Risk of losing Prod assets because of intended or unintended damage (deletion) of assets by people or resources with legitimate access to Prod AWS Account.
-2. Encourages thinking on DR and understanding of environments via thorough documentation
-3. Increased confidence and better expectations management for the Business around recovery of data
-4. Increased knowledge on the RDS Service and what it has to offer on Cross Account backups
+1. Reduces the risk of losing production assets because of intended or unintended damage (deletion) of assets by people or resources with legitimate access to production AWS Account.
+2. Encourages thinking about DR and understanding of environments through documentation
+3. Increased confidence and realigns business expectations around recovery of resources critical to Business Continuity
+4. Increased knowledge of AWS RDS Service and what it has to offer on Cross Account backups
 
 
 ## Background
 
 Disaster recovery (DR) is often thought of in terms of handling massive failures of infrastructure - the loss of a whole data centre for example. In AWS, these kinds of failures are usually mitigated by architectures that allow technical solutions to span multiple Availability Zones  and Regions. However, there are other kinds of 'disasters' including the accidental or intentional mass deletion of resources by people who have legitimate access to an AWS account.
 This kind of 'disaster' can be mitigated by saving copies of key resources - AMIs, CloudFormation templates, encryption keys and instance & RDS snapshots - to a second 'Failsafe' account to which there is limited and carefully controlled access. Such control could be maintained by splitting the password and the MFA device across multiple members of staff, requiring two to be present before access is possible.
-The SAM Stack provided here offers a way of taking a daily copy of the most recent Automated RDS Snapshots. This could from be one or more RDS instances in a Live AWS Prod Account to an AWS 'Failsafe' Account. The 'Failsafe' Account has restricted / limited access granted to People and Services.
+
+The [AWS Serverless Application Model](https://docs.aws.amazon.com/lambda/latest/dg/serverless_app.html) Stack provided here offers a way of taking a daily copy of the most recent Automated RDS Snapshots. This could be from one or more RDS instances in a Live AWS Production Account to an AWS 'Failsafe' Account. The 'Failsafe' Account is assumed to have restricted / limited access granted to People and Services.
 
 ## Solution for RDS Backup
 
