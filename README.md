@@ -10,27 +10,31 @@
 
 ## Background
 
-Disaster recovery (DR) is often thought of in terms of handling massive failures of infrastructure - the loss of a whole data centre for example. In AWS, these kinds of failures are usually mitigated by architectures that allow technical solutions to span multiple Availability Zones  and Regions. However, there are other kinds of 'disasters' including the accidental or intentional mass deletion of resources by people who have legitimate access to an AWS account.
+Disaster recovery (DR) is often thought of in terms of handling massive failures of infrastructure - the loss of a whole data centre for example. In AWS, these kinds of failures are usually mitigated by architectures that allow technical solutions to span multiple Availability Zones  and Regions. However, there are other kinds of 'disasters' including the accidental or intentional mass deletion of resources by people who have legitimate access to an AWS account. < br />
 This kind of 'disaster' can be mitigated by saving copies of key resources - AMIs, CloudFormation templates, encryption keys and instance & RDS snapshots - to a second 'Failsafe' account to which there is limited and carefully controlled access. Such control could be maintained by splitting the password and the MFA device across multiple members of staff, requiring two to be present before access is possible.
 
 The [AWS Serverless Application Model](https://docs.aws.amazon.com/lambda/latest/dg/serverless_app.html) Stack provided here offers a way of taking a daily copy of the most recent Automated RDS Snapshots. This could be from one or more RDS instances in a Live AWS Production Account to an AWS 'Failsafe' Account. The 'Failsafe' Account is assumed to have restricted / limited access granted to People and Services.
 
-## Solution for RDS Backup
+## RDS Backup Approach
 
-The target RDS Database is tagged with a special tag {Key:"Failsafe", Value:"True"}. Apart from deploying the Stack across AWS Accounts this is the only manual work required to enable 'Failsafe' backups.
-This target RDS Database should have automatic snapshot creation enabled via the AWS console. AWS RDS creates automated backups of the DB instance during the backup window. AWS RDS saves the automated backups of the DB instance according to the backup retention period that is specified.
+The target RDS Database is tagged with a special tag `{Key:"Failsafe", Value:"True"}`. Apart from invoking AWS SAM via AWS CLI to deploy the Stack across AWS Accounts, this is the only manual work required to enable 'Failsafe' backups. Once the stack is up and running developers will only need to add the `Failsafe tags` to the RDS Instance. <br />
+The target RDS Database should have automatic snapshot creation enabled via the AWS console. AWS RDS creates automated backups of the DB instance during the backup window. AWS RDS saves the automated backups of the DB instance according to the backup retention period that is specified.
 
-When an automated backup is run, a payload is sent to an SNS Topic by the RDS Event Subscription. This event kicks off the Lambda function to Copy and Share the RDS Snapshot accross accounts. The "Copy Lambda" function in the target Account checks whether the "failsafe" targed RDS has automated snapshots that have not been backed-up to the 'Failsafe' account yet. If there are then a manual copy of the automated snapshot is created.  The manual snapshot is shared to the Failsafe account. The "Save Lambda" function in the Failsafe account will then copy this snapshot and keep it for the specified retention period.
-The illustration below demonstrates how this process is tied together:
+When an automated backup is run, a payload is sent to an SNS Topic by the RDS Event Subscription. This event kicks off the Lambda function to Copy and Share the RDS Snapshot across accounts.  <br />
+The `Copy Lambda function` in the target Account checks whether the "failsafe" tagged RDS has automated snapshots that have not been backed-up to the 'Failsafe' account yet.
+If there are then a manual copy of the automated snapshot is created.  The manual snapshot is shared to the Failsafe account. The `Save Lambda function` in the Failsafe account will then copy this snapshot and keep it for the specified retention period. <br />
+
+The illustration below demonstrates how this approach is tied together:
 ![Sorry… Image gone shopping](./readme_artefacts/Snapshot%20Failsafe.png "Failsafe Snapshots")
 
 ###### Key Steps:
-1. Amazon RDS in the Prod AWS Account is configured to create and save automated backup snapshots of DB instances
-2. There is an SNS Topic configured in the Prod AWS Account that receives an Event when RDS Automated Backup Starts/Ends. It triggers the Lambda function to Copy the Automated Snapshot to a manual Snapshot within the Prod AWS Account.
+1. Amazon RDS in a production AWS Account is configured to create and save automated backup snapshots of DB instances
+2. There is an SNS Topic configured in the production AWS Account that receives an event when RDS automated backup starts & ends. The event triggers the Lambda function to Copy the Automated Snapshot to a manual Snapshot within the production AWS Account.
 3. The Copy Lambda function copies the Automated Snapshot to a Manual Snapshot and shares it with the FailSafe account
 4. The Copy Lambda function sends an SNS Event to trigger the Save Lambda function in the FailSafe account
 5. The Save Lambda function in the FailSafe account copies the shared Snapshot and saves it to the Failsafe account
-6. An SNS Event for notification and to clean up… [Still considering how to make this step less chatty hence not implemented yet]
+6. An SNS Event for notification and to clean up…
+> Note: still considering how to make this step less chatty hence not implemented yet
 
 #### Opportunities identified
 - How can we reliably tell the “Save Lambda" function that the Manual snapshot is ready?
