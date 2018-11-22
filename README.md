@@ -37,13 +37,16 @@ The illustration below demonstrates how this approach is tied together:
 > Note: still considering how to make this step less chatty hence not implemented yet
 
 #### Opportunities identified
-- How can we reliably tell the “Save Lambda" function that the Manual snapshot is ready?
+- **Polling.** How can we reliably tell the `Save Lambda function` that the Manual snapshot is ready?
 This opportunity arose from the realisation that waiting for any RDS event to complete using polling is bad practice. Events are sent in succession and developers are forced to write a polling functions for the Lambda functions so as to have some control on the process flow.
-There exists a bug in the RDS API for DB Snapshot Manual create. This, unfortunately, sends an Automated Snapshot RDS event together with the requested Manual Snapshot create event causing the Lambda function to loop. (instead of 2 we get 4 events: Manual Snapshot Start Create/ Manual Snapshot End Create/ Automated Snapshot Start Create/Automated Snapshot End Create). An “Event Category Bug” fix request was raised and has since been fixed by AWS.
-- There is no possibility to share AWS RDS Automated snapshots straight up when they are created. This is also complicated by the fact that Manual Snapshots have to be available before they are shared. This forces the developer to think up complicated means of managing Automated Snapshot sharing procedure Cross Accounts.
-- Working with RDS (any AWS Infrastructure) Cross-Accounts is not mature enough at the time of writing this readme. Orchestration of infrastructure setup across accounts is hard. The only option at the moment is to use tools that are currently Beta versions. We tried using AWS SAM, AWS StackSets, but these require granting cross account global access which is not inline with our restricted Backup account policy.
-- Cross accounts creation of stacks is also limited by API definitions e.g. for RDS “copy_db_snapshots” cannot be used to copy snapshots Cross Accounts. A feature request has been raised with AWS to look into this. We Investigated Stack-Sets which was launched a month ago and it has its own limitations.
-- We found that testing Lambda functions locally is a painful task. We looked at SAM local and were impressed at how easy it made testing functionality of Lambda functions. Unfortunately, this meant creating real AWS Resources and interrogating real API endpoints. This means managing clean-ups and incurring undesirable costs.
+
+- **Cross Account Copy.** There is no possibility to share AWS RDS Automated snapshots straight up when they are created. This is also complicated by the fact that Manual Snapshots have to be available before they are shared. This forces the developer to think up complicated means of managing Automated Snapshot sharing procedure Cross Accounts.
+
+- **Cross Account Access Maturity** Working with RDS (any AWS Infrastructure) Cross-Accounts is not mature enough at the time of writing this readme. Orchestration of infrastructure setup across accounts is hard. The only option at the moment is to use tools that are currently Beta versions. We tried using AWS SAM, AWS StackSets, but these require granting cross account global access which is not inline with our restricted Backup account policy.
+
+- **Cross Account API Maturity** Cross accounts creation of stacks is also limited by API definitions e.g. for RDS `copy_db_snapshots` cannot be used to copy snapshots Cross Accounts. A feature request has been raised with AWS to look into this. We Investigated Stack-Sets which was launched a month ago and it has its own limitations.
+
+- **Testing** We found that testing Lambda functions locally is a painful task. We looked at SAM local and were impressed at how easy it made testing functionality of Lambda functions. Unfortunately, this meant creating real AWS Resources and interrogating real API endpoints. This means managing clean-ups and incurring undesirable costs.
 
 #### Recommendations / Observations
 1. AWS to fix the “Event Category Bug” which has been reported to AWS RDS Team
