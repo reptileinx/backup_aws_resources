@@ -349,3 +349,9 @@ def handler(event, context):
     event_guard(event)
     db_instance = get_db_instances_from_notification(event)
     run_rds_snapshot_backup(db_instance)
+
+
+if __name__ == "__main__":
+    event = []
+    context = []
+    handler(event, context)
