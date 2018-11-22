@@ -62,7 +62,7 @@ This opportunity arose from the realisation that waiting for any RDS event to co
 Backing up the RDS Snapshot from AWS production account to FailSafe production Account.
 In order to perform cross account actions Amazon SNS deliveries to Lambda, we have authorised the Lambda function to be invoked from Amazon SNS in the AWS production  Account. In turn, Amazon SNS needs to allow the Lambda account to subscribe to the Amazon SNS topic.
 
-#### Current Implementation in Prose
+#### Current Implementation in Prose (Manual Deployment)
 > **Target Account** - means execute the AWS CLI commands in the context of the target account <br />
 > **Failsafe Account** - means execute the AWS CLI commands in the context of the FailSafe account
 
@@ -207,46 +207,40 @@ To get the above output run
 9. **Failsafe account:** Allow the Lambda function to accept invocations from Target `SNSSaveTopic`
 10. **Failsafe account:** subscribe the Lambda function to the topic in Target Account.
 
----
-#### Testing the stack created
-Log on to the Target account AWS console and run the test on the Lambda function. The default test payload will work just fine as the Lambda is not using any Event Object.
 
-#### Checking that RDS snapshot has been shared
--	select the RDS snapshot that has been shared with the Failsafe account
--	under snapshot actions select `share snapshot`
--	there should be the intended account under `Manage Snapshot Permissions` e.g. <failsafe_account_id>
+#### Using AWS SAM and AWS CLI to Package, Manage and Deploy Copy Stack
+By virtue of the Stack being across accounts it is tedious to manually deploy. Considering that, at the time of writing, tools are not mature enough to securely deploy the stack across accounts with varied access requirements, we used SAM (Beta) to automate as much of the deployment as we could. The developer would still have to run SAM on two accounts to get the full stack deployed. Hence we have cosercutively named the two sides of the stack `RDS Copy Snapshot Stack` and `RDS Save Snapshot Stack`. This however, makes rigorous testing even harder.
 
-#### Packaging, Deploying and Managing Copy Lambda Stack to the target account (i.e. sandpit) using AWS SAM and AWS CLI
-1. Created a template `rds_copy_snap_template.yaml`
+1. Create a template `rds_copy_snap_template.yaml`
 
-2. Packaging the RDS Copy Snapshot Tool for deployment to Sandpit
+2. Package the `RDS Copy Snapshot Stack` for deployment to AWS account
     ```bash
     # run in the target account context
      ➜ $ aws cloudformation package \
 		    --template-file /workdir/rds_copy_snap_template.yaml \
 		    --output-template-file /workdir/readme_artefacts/rds_copy_serverless-output.yaml \
 		    --s3-bucket <reptileinx.aws>
-    ```
-    ```
+    ---
     Response will look something like below:-
-       Uploading to 3cbscdsee8bc225d61ss1ee9ccdd848a92f0 60480 / 60480.0 (100.00%)
-    Successfully packaged artefacts and wrote output template to file /workdir/readme_artefacts/rds_copy_serverless-output.yaml.
-    Execute the following command to deploy the packaged template
-    aws cloudformation deploy --template-file /workdir/readme_artefacts/rds_copy_serverless-output.yaml --stack-name <YOUR STACK NAME>
+         Uploading to 3cbscdsee8bc225d61ss1ee9ccdd848a92f0 60480 / 60480.0 (100.00%)
+         Successfully packaged artefacts and wrote output template to file /workdir/readme_artefacts/rds_copy_serverless-output.yaml.
+         Execute the following command to deploy the packaged template
+         aws cloudformation deploy --template-file /workdir/readme_artefacts/rds_copy_serverless-output.yaml --stack-name <YOUR STACK NAME>
     ```
-Note: The package command will zip our code, upload it to S3, and add the correct CodeUri property to the output template. This is why the CodeUri is empty, or is set to a dot, in our original template. Each time we run the package command, it will generate a different ID for our package and will fill the CodeUri field with the correct address. In this way, we can deploy new versions of our Lambda function or roll back to a previous version.
 
-3. Deploying the Copy Snapshot Tool
+> NOTE: The package command will zip our code, upload it to S3, and add the correct CodeUri property to the output template. This is why the CodeUri is empty in our template, or is set to a dot, in our original template. Each time we run the package command, it will generate a different ID for our package and will fill the CodeUri field with the correct address. In this way, we can deploy new versions of our Lambda function or roll back to a previous version.
+
+3. Deploying the `RDS Copy Snapshot Stack`
     ```bash
     ➜ $ aws cloudformation deploy \
 		    --template-file /workdir/readme_artefacts/rds_copy_serverless-output.yaml \
 		    --stack-name ReptileinxCOPYRDSSnap \
 		    --capabilities CAPABILITY_NAMED_IAM --parameter-overrides FailsafeAccountIdParam=failsafe_account_id
     ```
-Note: We are adding the --capabilities CAPABILITY_IAM parameter because the AWS::Serverless::Function resource is going to create a role with the permissions to execute our Lambda function, and we want CloudFormation to be able to create it for us.
+> NOTE: We are adding the --capabilities CAPABILITY_IAM parameter because the AWS::Serverless::Function resource is going to create a role with the permissions to execute our Lambda function, and we want CloudFormation to be able to create it for us.
 The failsafe account is being passed on to the function as follows: `--parameter-overrides FailsafeAccountIdParam=<failsafe_account_id> `
 
-4. If the stack is successfully created this output will be as shown below:
+4. If the stack is successfully created its output will be as shown below:
     ```bash
         Waiting for changeset to be created..
         Waiting for stack create/update to complete
@@ -254,6 +248,7 @@ The failsafe account is being passed on to the function as follows: `--parameter
    ```
 5. Go to the Lambda function and test it by running the test with default payload:
     ```bash
+       # sample CloudWatch logs
         START RequestId: 76d906ba-9ed0-11e7-8cdd-031cef4ef44f Version: $LATEST
         Found database with Failsafe tag reptileinxDB--instanceDate
         Deleting previously created manual snapshots for reptileinxDB--instanceDate
@@ -275,92 +270,66 @@ The failsafe account is being passed on to the function as follows: `--parameter
         Sending SNS alert to failsafe topic
         END RequestId: 76d906ba-9ed0-11e7-8cdd-031cef4ef44f
         REPORT RequestId: 76d906ba-9ed0-11e7-8cdd-031cef4ef44f	Duration: 75206.69 ms	Billed Duration: 75300 ms 	Memory Size: 128 MB	Max Memory Used: 40 MB
+      ```
+      #### Additional Access Required to Operate these Stacks
+      To run stacks in production account the following special policies are required for Cloudformation.
 
-    ```
+      ```
+      delete policy, detach role policy, update, create, deletestack
+      ```
+      ```
+---
+## Testing
 
-### Packaging, Deploying and Managing Save Lambda Stack to the target account (i.e. sandpit) using AWS SAM and AWS CLI
-1. Created a template `rds_save_snap_template.yaml`
-2. Packaging the RDS Save Snapshot Tool for deployment to backup account
-    ```bash
-     ➜ $ aws cloudformation package \
-		    --template-file /workdir/rds_save_snap_template.yaml \
-		    --output-template-file /workdir/readme_artefacts/rds_backup_serverless-output.yaml \
-		    --s3-bucket save-rds-snap
-    ```
-3. Deploying the Save Snapshot Tool
-    ```bash
-    ➜ $ aws cloudformation deploy \
-		    --template-file /workdir/readme_artefacts/rds_copy_serverless-output.yaml \
-		    --stack-name ReptileinxCOPYRDSSnap \
-		    --capabilities CAPABILITY_NAMED_IAM --parameter-overrides TargetAccountIdParam=target_account_id
-    ```
-Note: We are adding the --capabilities CAPABILITY_IAM parameter because the AWS::Serverless::Function resource is going to create a role with the permissions to execute our Lambda function, and we want CloudFormation to be able to create it for us.
-The Target account is being passed on to the function as follows: `--parameter-overrides TargetAccountId=target_account_id`
+#### Testing the stack created
+Log on to the Target account AWS console and run the test on the Lambda function. The default test payload will work just fine as the Lambda is not using any Event Object.
 
-4. If the stack is successfully created this output will be as shown below:
-    ```bash
-        Waiting for changeset to be created..
-        Waiting for stack create/update to complete
-        Successfully created/updated stack - ReptileinxSaveRDSSnap
-   ```
-5. The save lambda function cannot be tested independently for now. Need to figure out why the SNS Event Mock is not being parsed correctly.
+1. Manual Approach: This involves following steps in "Manual Deployment of Cross Accounts RDS Failsafe Stack " process. Then in the target account invoke the test with default test payload.
+> Note: the target DB Instance should be tagged as a precursor for the approach to work 'Failsafe:True'
 
-## Solving the testing problem using AWS SAM Local
-Testing Lambda Functions while developing through the AWS Console is a tedious task. Here we decided to use AWS SAM Local and it worked well (see here https://github.com/awslabs/aws-sam-local). In short SAM Local is a replica of the AWS Lambda run-time environment on the local machine. This makes the testing and development process a bit more streamlined.
-Unfortunately, testing using SAM Local does not decouple the testing from AWS environments. The running tests will still have to consume AWS resources. AWS SAM Local also requires NPM, Docker and AWS CLI installed and configured on the local machine which might scare for some.
-AWS SAM Local is a sleek tool (still in Beta) and we found it pretty easy to use. We recognize the huge opportunities that this tool brings around automated testing of Lambda infrastructure.
+Once the RDSCopySnapshot Lambda function completes, check the CloudWatch events in both the Target account and the Backup account.
 
+To test end to end, leave the stacks running overnight and then check the Backup account for Failsafe Snapshots created (would have been around 4am)
+
+2. Automated AWS Tests using SAM. Documented herein 'Solving the testing problem using AWS SAM Local'
+TODO: :monkey:
+
+3. Moto Testing
+To remove dependencies on the AWS infrastructure we decided to run Moto in standalone server mode.
+See documentation here: https://github.com/spulec/moto
+
+- Installing and Testing with Moto
 ```bash
-# Pre-requisites
-    - install docker
-    - install npm
-    - install and configure awscli
+    pip install pytest
+    pip install coverage
 
-# Actions
-    # Install SAM Local
-    $ npm install -g aws-sam-local
-
-    # Run Test
-    $ sam local generate-event sns | sam local invoke "RDSCopySnapshotFunction" --template rds_copy_snap_template.yaml
-
-    # If not interested in an AWS event you can generate your own and run it as follows
-    $ sam local invoke "RDSCopySnapshotFunction" -e event.json --template rds_copy_snap_template.yaml
-
-    Note:
-    The Cloudformation template should be an AWS SAM template
-
-
-    Results
-
-    2017/09/05 22:21:45 Fetching lambci/lambda:python2.7 image for python2.7 runtime...
-    python2.7: Pulling from lambci/lambda
-    Digest: sha256:ceedcaa521f5d046cde3ef3760b9e52843609ae4f1007d21aa1ee6df04dda923
-    Status: Image is up to date for lambci/lambda:python2.7
-    2017/09/05 22:21:49 Reading invoke payload from stdin (you can also pass it from file with --event)
-    2017/09/05 22:21:49 Invoking rdscopysnapshots.handler (python2.7)
-    START RequestId: f64ccac3-8045-4b11-9c66-838096b70d5e Version: $LATEST
-    Deleting old manual snapshots for reptileinxDB--instanceDate
-    Ignoring mingbreaks
-    Ignoring sameaccountcopy
-    Deleting failsafe-reptileinxDB--instanceDate-2017-08-27-16-12
-    Creating manual copy of the most recent auto snapshot of reptileinxDB--instanceDate
-    Waiting for copy of failsafe-reptileinxDB--instanceDate-2017-09-04-16-13 to complete.
-    Snapshot rds:reptileinxDB--instanceDate-2017-09-04-16-13 copied to failsafe-reptileinxDB--instanceDate-2017-09-04-16-13
-    Sharing failsafe-reptileinxDB--instanceDate-2017-09-04-16-13
-    Sending SNS alert
-    END RequestId: f64ccac3-8045-4b11-9c66-838096b70d5e
-
-    REPORT RequestId: f64ccac3-8045-4b11-9c66-838096b70d5e Duration: 94208
-    ms Billed Duration: 94300 ms Memory Size: 128 MB Max Memory Used: 33 MB
+    # we recommend setting up moto by pulling down the github repository and running the docker install
+    docker build -t motoserver .
+    # In the moto dir run
 ```
 
-## Solving the Cross-Account deployment with AWS StackSets
-```text
-   We want to deploy a stack that spans across accounts... one half of the stack is for copying rds snapshots and the other half will save the RDS snapshots to failsafe account.
+run tests like so
+```bash
+    py.test --cov-report term --cov=rdssavesnapshots test_save_manual_failsafe_snapshot_standalone.py
 ```
+
+
+#### Checking that RDS snapshot has been shared
+-	select the RDS snapshot that has been shared with the Failsafe account
+-	under snapshot actions select `share snapshot`
+-	there should be the intended account under `Manage Snapshot Permissions` e.g. `failsafe_account_id`
+
+#### Moto for Unit testing
+TODO: :monkey:
+
+## Spiking Cross-Account deployment with AWS StackSets
+
+> We want to deploy a stack that spans across accounts... one half of the stack is for copying rds snapshots and the other half will save the RDS snapshots to failsafe account.
+
 AWS CloudFormation enables users to create infrastructure based on templates specified in YAML or JSON.  Rather than setting up an environment manually, a CloudFormation template can be used to create all of the necessary resources. Until recently, this functionality was limited to a single account and a single region.
 
 A StackSet is a set of CloudFormation stacks that can easily be deployed to multiple AWS accounts and/or multiple AWS regions. We will use the AWS CLI to create a StackSet with the CloudFormation stacks defined by our templates.
+
 In a nut shell there are two resources that are managed
 - StackSet - the container in which the set of CloudFormation stack instances will live
 - Stack - the actual instantiation of the template we provided to the StackSet
@@ -370,57 +339,17 @@ CloudFormation needs some very specific permissions to get a StackSet up and run
 - In each of the Target accounts will need the IAM role `AWSCloudFormationStackSetExecutionRole` which will be assumed by the `AWSCloudFormationStackSetAdministrationRole` Role
 (see http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-prereqs.html)
 
-The picture bellow shows how then StackSet will be able toi orchestrate to different accounts.
+The picture bellow shows how then StackSet will be able to orchestrate to different accounts.
 
 ![Sorry … Image has gone shopping](./readme_artefacts/StackSetAssumeRole.png "StackSet Assume Role")
 
 
-## Other
+## Other Considerations
 1. What will happen if the 5 databases save snapshots at exactly the same time? Consider the fact that the Lambda function will die after 5 min.
-2. How can we stop the need for re-running both Stacks in if we recreate the Copy stack?
-   If the Copy stack is refreshed, you will need to rerun the Save stack because it will need to subscribe to the Copy stack.
-   Also the Save stack will need to reissue permissions for the Copy stack.
+2. How can we stop the need to re-run both Stacks if we recreate the any of the stacks 'Copy or Save stack'? see issue #2
 3. How can we remove the waits from our Lambda functions without degrading the level of control we have on the process flow?
 4. Why is using event trigger bad for our solution?
-    Imagine a scenario where 10 database instances create snapshots at exactly the same time. The event trigger will wake up only 1 single lambda function to process all these snapshots.
+    > Imagine a scenario where 10 database instances create snapshots at exactly the same time. The event trigger will wake up only 1 single lambda function to process all these snapshots.
     The lambda function has a timeout period of 5min. After which the error  "...Task timed out after 300.09 seconds" is thrown.
     This means our solution is bound to fail.
     The situation would have been different if we used the RDS automatic notification. AWS would automatically - we hope -  trigger multiple Lambda functions to finish the job.
-
-5. What testing was done?
-
-Testing of the RDS Snapshot Copy/Save Stacks is complex as described above.
-    1. Manual Approach: This involves following steps in "Manual Deployment of Cross Accounts RDS Failsafe Stack " process.
-        Then in the target account invoke the test with default test payload.
-        Note: It is a precursor to the process working that the target DB Instance be Tagged with 'Failsafe:True'
-
-        Once the RDSCopySnapshot Lambda function completes, check the CloudWatch events in both the Target account and the Backup account.
-
-        => To test end to end, leave the stacks running overnight and then check the Backup account for Failsafe Snapshots created (would have been around 4am)
-
-    2. Automated AWS Tests using SAM. Documented herein 'Solving the testing problem using AWS SAM Local'
-
-    3. Moto Testing
-        To remove dependencies on the AWS infrastructure we decided to run Moto in standalone server mode.
-        See documentation here:
-            https://github.com/spulec/moto
-
-        - Installing and Testing with Moto
-
-        ```bash
-            pip install pytest
-            pip install coverage
-
-            # we recommend setting up moto by pulling down the github repository and running the docker install
-             docker build -t motoserver .
-            # In the moto dir run
-        ```
-
-        run tests like so
-        ```bash
-            py.test --cov-report term --cov=rdssavesnapshots test_save_manual_failsafe_snapshot_standalone.py
-        ```
-
-        #### Additional Access Required to Operate these Stacks
-            Contact Cloud Services to modify User Access for Prod Account with the following policies.
-            delete policy, detachrolepolicy, update,create,deletestack
