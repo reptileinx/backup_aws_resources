@@ -22,7 +22,7 @@ SNS notification to the subscription Topic.
 FAILSAFE_SNAPSHOT_PREFIX = 'failsafe-'
 SNS_RDS_SAVE_TOPIC = 'reptileinx_save_failsafe_snapshot_sns_topic'
 AWS_DEFAULT_REGION = 'ap-southeast-2'
-FAILSAFE_ACCOUNT_ID = os.environ['FAILSAFE_ACCOUNT_ID']
+FAILSAFE_ACCOUNT_ID = os.getenv('FAILSAFE_ACCOUNT_ID', '2352525252332')
 MANUAL_SNAPSHOT_EXISTS_MESSAGE = 'Manual snapshot already exists ' \
                                     'for the automated snapshot {}'
 
@@ -339,12 +339,10 @@ def get_db_instances_from_notification(event):
 
 def handler(event, context):
     """
-    The function that AWS Lambda service invokes when executing the code in
-    this module.
+    The function that AWS Lambda service invokes when executing the code.
     :param event: used to to pass in event data to the handler.
     An RDS notification will trigger this process
     :param context: we are not providing any runtime information to the handler
-    if required
     :return: true if an automated snapshot was copied, shared and a
     notification was sent to an SNS Topic
     """
